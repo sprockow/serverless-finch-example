@@ -1,0 +1,114 @@
+# Welcome to Serverless!
+#
+# This file is the main config file for your service.
+# It's very minimal at this point and uses default values.
+# You can always add more config options for more control.
+# We've included some commented out config examples here.
+# Just uncomment any of them to get that config option.
+#
+# For full config options, check the docs:
+#    docs.serverless.com
+#
+# Happy Coding!
+
+service: serverless-finch-example
+
+plugins:
+  - serverless-finch
+
+custom:
+  client:
+    manageResources: false
+    bucketName: serverless-finch-cloudfront-poc
+    distributionFolder: client-build
+    objectHeaders:
+      "**/*.js":
+        - name: "Cache-Control"
+          value: "max-age=31536000"
+        - name: "Content-Type"
+          value: "text/js"
+      "**/*.css":
+        - name: "Cache-Control"
+          value: "max-age=31536000"
+        - name: "Content-Type"
+          value: "text/css"
+      "**/*.html":
+        - name: "Cache-Control"
+          value: "max-age=10"
+        - name: "Cache-Control"
+          value: "text/css"
+
+provider:
+  name: aws
+  runtime: nodejs8.10
+
+resources:
+  Resources:
+    ClientBucketResource:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.client.bucketName}
+    ClientBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: ${self:custom.client.bucketName}
+        PolicyDocument:
+          Statement:
+            - Sid: OAIGetObject
+              Effect: Allow
+              Principal:
+                AWS:
+                  Fn::Join:
+                    - " "
+                    - - arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity
+                      - Ref: S3OriginAccessIdentity
+              Action:
+                - s3:GetObject
+              Resource:
+                Fn::Join:
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - Ref: ClientBucketResource
+                    - "/*"
+    S3OriginAccessIdentity:
+      Type: "AWS::CloudFront::CloudFrontOriginAccessIdentity"
+      Properties:
+        CloudFrontOriginAccessIdentityConfig:
+          Comment: Serverless managed web app S3 bucket origin-access-identity
+    ApiDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Origins:
+            - Id: WebApp
+              DomainName:
+                Fn::GetAtt: [ClientBucketResource, DomainName]
+              S3OriginConfig:
+                OriginAccessIdentity:
+                  Fn::Join:
+                    - ""
+                    - - origin-access-identity/cloudfront/
+                      - Ref: S3OriginAccessIdentity
+          Enabled: true
+          HttpVersion: http2
+          Comment: cdn for api gateway
+          PriceClass: PriceClass_All
+          DefaultRootObject: index.html
+          DefaultCacheBehavior:
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            ## The origin id defined above
+            TargetOriginId: WebApp
+            ## Defining if and how the QueryString and Cookies are forwarded to the origin which in this case is S3
+            ForwardedValues:
+              QueryString: "false"
+              Cookies:
+                Forward: none
+            ## The protocol that users can use to access the files in the origin. To allow HTTP use `allow-all`
+            ViewerProtocolPolicy: redirect-to-https
+          Logging:
+            IncludeCookies: "false"
+            Bucket: ""
+            Prefix: ""
